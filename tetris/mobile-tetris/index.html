@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+    <link rel="apple-touch-icon" href="tetris-icon.png">
+  
+    <link rel="icon" type="image/png" href="tetris-icon.png">
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -10,6 +14,7 @@
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@700&display=swap" rel="stylesheet">
     <style>
         * {
@@ -45,6 +50,92 @@
 
     <script type="text/babel">
         const { useState, useEffect, useCallback } = React;
+
+        // Supabase 클라이언트 초기화
+        const SUPABASE_URL = 'https://uppadxrwksnvnantiufk.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwcGFkeHJ3a3Nudm5hbnRpdWZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5MTczMjgsImV4cCI6MjA4NzQ5MzMyOH0.QhCAZTbIYPgTj92HjkTOhl6THgjALswcXCvyfGRqtXA';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // 한국 시간 포맷 (YYYY-MM-DD HH:mm:ss)
+        const getKoreanTime = () => {
+            const now = new Date();
+            const koreaTime = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+            return koreaTime.toISOString().slice(0, 19).replace('T', ' ');
+        };
+
+        // 페이지 로드 시 play_count 증가 및 created_at 업데이트
+        const updatePlayCount = async () => {
+            try {
+                const { error } = await supabase
+                    .from('plays')
+                    .update({
+                        play_count: supabase.sql`play_count + 1`,
+                        created_at: getKoreanTime()
+                    })
+                    .eq('play_name', 'tetris');
+
+                if (error) {
+                    // raw SQL로 업데이트
+                    await supabase.rpc('increment_play_count', { game_name: 'tetris' }).catch(() => {
+                        // RPC가 없으면 직접 쿼리
+                        fetch(`${SUPABASE_URL}/rest/v1/rpc/`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                            }
+                        });
+                    });
+                }
+            } catch (err) {
+                console.log('Play count update error:', err);
+            }
+        };
+
+        // game_count 증가 함수
+        const updateGameCount = async () => {
+            try {
+                // 현재 값 조회 후 증가
+                const { data } = await supabase
+                    .from('plays')
+                    .select('game_count')
+                    .eq('play_name', 'tetris')
+                    .single();
+
+                const currentCount = data?.game_count || 0;
+
+                await supabase
+                    .from('plays')
+                    .update({ game_count: currentCount + 1 })
+                    .eq('play_name', 'tetris');
+            } catch (err) {
+                console.log('Game count update error:', err);
+            }
+        };
+
+        // 페이지 로드 시 실행
+        (async () => {
+            try {
+                const { data } = await supabase
+                    .from('plays')
+                    .select('play_count')
+                    .eq('play_name', 'tetris')
+                    .single();
+
+                const currentCount = data?.play_count || 0;
+
+                await supabase
+                    .from('plays')
+                    .update({
+                        play_count: currentCount + 1,
+                        created_at: getKoreanTime()
+                    })
+                    .eq('play_name', 'tetris');
+            } catch (err) {
+                console.log('Initial play count update error:', err);
+            }
+        })();
 
         // 테트리스 음악 (코로벨니키) - Web Audio API
         const createTetrisMusic = () => {
@@ -279,6 +370,31 @@
             const [isMoving, setIsMoving] = useState(false);
             const [moveDirection, setMoveDirection] = useState(0);
             const [isMuted, setIsMuted] = useState(false);
+            const [playsInfo, setPlaysInfo] = useState({ tot_plays: 0, tot_games: 0, played_at: '' });
+
+            // plays 테이블에서 정보 로드
+            useEffect(() => {
+                const loadPlaysInfo = async () => {
+                    try {
+                        const { data } = await supabase
+                            .from('plays')
+                            .select('play_count, game_count, created_at')
+                            .eq('play_name', 'tetris')
+                            .single();
+
+                        if (data) {
+                            setPlaysInfo({
+                                tot_plays: data.play_count || 0,
+                                tot_games: data.game_count || 0,
+                                played_at: data.created_at ? data.created_at.slice(0, 19).replace('T', ' ') : ''
+                            });
+                        }
+                    } catch (err) {
+                        console.log('Load plays info error:', err);
+                    }
+                };
+                loadPlaysInfo();
+            }, []);
 
             const currentHour = new Date().getHours();
             const isDaytime = currentHour >= 6 && currentHour < 18;
@@ -517,8 +633,14 @@
                 }
             };
 
-            const startGame = () => initializeGame(createEmptyBoard());
-            const startRandomGame = () => initializeGame(createRandomBoard());
+            const startGame = () => {
+                updateGameCount();
+                initializeGame(createEmptyBoard());
+            };
+            const startRandomGame = () => {
+                updateGameCount();
+                initializeGame(createRandomBoard());
+            };
 
             const resetGame = () => {
                 setBoard(createEmptyBoard());
@@ -880,6 +1002,13 @@
                                 )}
                             </>
                         )}
+                    </div>
+
+                    {/* plays 정보 */}
+                    <div className="absolute bottom-2 left-2 text-xs text-amber-900 bg-yellow-100 bg-opacity-70 px-2 py-0.5 rounded z-10 text-left leading-tight pointer-events-none">
+                        <div>tot_plays = {playsInfo.tot_plays}</div>
+                        <div>tot_games = {playsInfo.tot_games}</div>
+                        <div>played_at = {playsInfo.played_at}</div>
                     </div>
 
                     {/* 푸터 */}
