@@ -101,25 +101,12 @@
 </div>
 
 <script>
-// 직접 요청 실패 시 CORS 프록시로 재시도
-const DIRECT = 'https://m.stock.naver.com/api/index/KOSPI/basic';
-const PROXY  = 'https://corsproxy.io/?url=https%3A%2F%2Fm.stock.naver.com%2Fapi%2Findex%2FKOSPI%2Fbasic';
-
-async function fetchData() {
-  try {
-    const r = await fetch(DIRECT, { cache: 'no-store' });
-    if (!r.ok) throw new Error('direct failed');
-    return r.json();
-  } catch {
-    const r = await fetch(PROXY, { cache: 'no-store' });
-    if (!r.ok) throw new Error('proxy failed');
-    return r.json();
-  }
-}
-
 async function load() {
   try {
-    const d = await fetchData();
+    // GitHub Actions가 5분마다 갱신하는 data.json (동일 도메인 → CORS 없음)
+    const r = await fetch('./data.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('fetch failed');
+    const d = await r.json();
 
     const price  = parseFloat(d.closePrice.replace(/,/g, ''));
     const diff   = parseFloat(d.compareToPreviousClosePrice.replace(/,/g, ''));
