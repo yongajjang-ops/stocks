@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>KOSPI</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #111318;
+    font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .widget {
+    width: 100%;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .name {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #6e7681;
+    text-transform: uppercase;
+  }
+
+  .market-state {
+    font-size: 10px;
+    color: #6e7681;
+  }
+
+  .price {
+    font-size: 36px;
+    font-weight: 800;
+    color: #f0f6fc;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+
+  .change-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .change {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .pct {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .up   { color: #3fb950; }
+  .down { color: #f85149; }
+  .flat { color: #8b949e; }
+
+  .updated {
+    font-size: 10px;
+    color: #484f58;
+    margin-top: 2px;
+  }
+
+  .error {
+    font-size: 12px;
+    color: #f85149;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="widget" id="widget">
+  <div class="top-row">
+    <span class="name">KOSPI</span>
+    <span class="market-state" id="state"></span>
+  </div>
+  <div class="price" id="price">···</div>
+  <div class="change-row">
+    <span class="change flat" id="change">—</span>
+    <span class="pct flat" id="pct">—</span>
+  </div>
+  <div class="updated" id="updated"></div>
+</div>
+
+<script>
+async function load() {
+  try {
+    const r = await fetch(
+      'https://query1.finance.yahoo.com/v8/finance/chart/%5EKS11?interval=1d&range=5d',
+      { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
+    );
+    const meta = (await r.json()).chart.result[0].meta;
+    const price = meta.regularMarketPrice;
+    const prev  = meta.chartPreviousClose ?? meta.previousClose ?? price;
+    const diff  = price - prev;
+    const pct   = (diff / prev) * 100;
+    const dir   = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+    const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
+    const sign  = diff >= 0 ? '+' : '';
+    const states = { REGULAR:'장중', CLOSED:'장마감', PRE:'장전', POST:'시간외' };
+
+    document.getElementById('price').textContent  = price.toLocaleString('ko-KR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('change').textContent = `${arrow} ${sign}${diff.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    document.getElementById('pct').textContent    = `(${sign}${pct.toFixed(2)}%)`;
+    document.getElementById('change').className   = `change ${dir}`;
+    document.getElementById('pct').className      = `pct ${dir}`;
+    document.getElementById('state').textContent  = states[meta.marketState] ?? '';
+    document.getElementById('updated').textContent = '갱신 ' + new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  } catch {
+    document.getElementById('price').innerHTML = '<span class="error">데이터 오류</span>';
+  }
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
