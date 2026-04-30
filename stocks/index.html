@@ -101,28 +101,44 @@
 </div>
 
 <script>
+// 직접 요청 실패 시 CORS 프록시로 재시도
+const DIRECT = 'https://m.stock.naver.com/api/index/KOSPI/basic';
+const PROXY  = 'https://corsproxy.io/?url=https%3A%2F%2Fm.stock.naver.com%2Fapi%2Findex%2FKOSPI%2Fbasic';
+
+async function fetchData() {
+  try {
+    const r = await fetch(DIRECT, { cache: 'no-store' });
+    if (!r.ok) throw new Error('direct failed');
+    return r.json();
+  } catch {
+    const r = await fetch(PROXY, { cache: 'no-store' });
+    if (!r.ok) throw new Error('proxy failed');
+    return r.json();
+  }
+}
+
 async function load() {
   try {
-    const r = await fetch(
-      'https://query1.finance.yahoo.com/v8/finance/chart/%5EKS11?interval=1d&range=5d',
-      { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
-    );
-    const meta = (await r.json()).chart.result[0].meta;
-    const price = meta.regularMarketPrice;
-    const prev  = meta.chartPreviousClose ?? meta.previousClose ?? price;
-    const diff  = price - prev;
-    const pct   = (diff / prev) * 100;
-    const dir   = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
-    const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
-    const sign  = diff >= 0 ? '+' : '';
-    const states = { REGULAR:'장중', CLOSED:'장마감', PRE:'장전', POST:'시간외' };
+    const d = await fetchData();
+
+    const price  = parseFloat(d.closePrice.replace(/,/g, ''));
+    const diff   = parseFloat(d.compareToPreviousClosePrice.replace(/,/g, ''));
+    const pct    = parseFloat(d.fluctuationsRatio.replace(/,/g, ''));
+    const dirName = d.compareToPreviousPrice?.name ?? '';
+
+    const isUp   = dirName === 'RISING'  || diff > 0;
+    const isDown = dirName === 'FALLING' || diff < 0;
+    const dir    = isUp ? 'up' : isDown ? 'down' : 'flat';
+    const arrow  = isUp ? '▲' : isDown ? '▼' : '—';
+    const sign   = diff > 0 ? '+' : '';
+    const states = { OPEN:'장중', CLOSE:'장마감', HALT:'거래중단' };
 
     document.getElementById('price').textContent  = price.toLocaleString('ko-KR', {minimumFractionDigits:2, maximumFractionDigits:2});
     document.getElementById('change').textContent = `${arrow} ${sign}${diff.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     document.getElementById('pct').textContent    = `(${sign}${pct.toFixed(2)}%)`;
     document.getElementById('change').className   = `change ${dir}`;
     document.getElementById('pct').className      = `pct ${dir}`;
-    document.getElementById('state').textContent  = states[meta.marketState] ?? '';
+    document.getElementById('state').textContent  = states[d.marketStatus] ?? '';
     document.getElementById('updated').textContent = '갱신 ' + new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
   } catch {
     document.getElementById('price').innerHTML = '<span class="error">데이터 오류</span>';
